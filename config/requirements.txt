@@ -1,0 +1,6 @@
+django <= 1.5.8
+django-tagging <= 0.3.4
+Twisted < 12
+whisper <= 0.9.12
+graphite-web <= 0.9.12
+carbon <= 0.9.12
