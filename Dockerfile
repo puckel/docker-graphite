@@ -1,4 +1,4 @@
-# VERSION 1.0
+# VERSION 2.0
 # AUTHOR: Matthieu "Puckel_" Roisil
 # DESCRIPTION: Basic Graphite container
 # BUILD: docker build --rm -t puckel/docker-graphite
@@ -12,14 +12,19 @@ ENV DEBIAN_FRONTEND noninteractive
 ENV TERM linux
 # Work around initramfs-tools running on kernel 'upgrade': <http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=594189>
 ENV INITRD No
-ENV GRAFANA_RELEASE 1.9.1
+
+ENV GRAPHITE_RELEASE 0.9.13-pre1
+ENV GRAPHITE_HOME /opt/graphite
+ENV GRAPHITE_CONF ${GRAPHITE_HOME}/conf
+ENV GRAPHITE_WEBAPP ${GRAPHITE_HOME}/webapp
+ENV GRAPHITE_STORAGE ${GRAPHITE_HOME}/storage
+
+ADD config /root/config
 
 RUN apt-get update -yqq \
     && apt-get install -yqq \
-    build-essential expect python-dev python-pip python-cairo python-flup \
-    pkg-config libffi-dev libcairo2 libcairo2-dev supervisor apache2 libapache2-mod-wsgi \
-    && curl -sL http://grafanarel.s3.amazonaws.com/grafana-${GRAFANA_RELEASE}.tar.gz | tar xz \
-    && mv grafana-${GRAFANA_RELEASE} /var/www/grafana \
+    libcairo2-dev libffi-dev pkg-config python-dev python-pip fontconfig apache2 libapache2-mod-wsgi git-core collectd memcached \
+    gcc g++ make supervisor \
     && apt-get clean \
     && rm -rf \
     /var/lib/apt/lists/* \
@@ -29,28 +34,39 @@ RUN apt-get update -yqq \
     /usr/share/doc \
     /usr/share/doc-base
 
-ADD config/requirements.txt /root/requirements.txt
-RUN pip install -r /root/requirements.txt
+RUN cd /usr/local/src \
+    && git clone https://github.com/graphite-project/graphite-web.git \
+    && git clone https://github.com/graphite-project/carbon.git \
+    && git clone https://github.com/graphite-project/whisper.git \
+    && git clone https://github.com/armon/statsite.git \
+    && cd whisper; git checkout ${GRAPHITE_RELEASE}; python setup.py install \
+    && cd ../carbon; git checkout ${GRAPHITE_RELEASE}; pip install -r requirements.txt; python setup.py install \
+    && cd ../graphite-web; git checkout ${GRAPHITE_RELEASE}; pip install -r requirements.txt; python check-dependencies.py; python setup.py install \
+    && cd ../statsite; pip install --egg SCons; make; cp statsite /usr/local/sbin/; cp sinks/graphite.py /usr/local/sbin/statsite-sink-graphite.py \
+    && mkdir ${GRAPHITE_CONF}/examples \
+    && mv ${GRAPHITE_CONF}/*.example ${GRAPHITE_CONF}/examples/ \
+    && cp /root/config/statsite/statsite.conf /etc/statsite.conf \
+    && cp /root/config/graphite/conf/* ${GRAPHITE_CONF}/ \
+    && cp /root/config/graphite/webapp/* ${GRAPHITE_WEBAPP}/graphite/ \
+    && sed -i -e "s/UNSAFE_DEFAULT/`date | md5sum | cut -d ' ' -f 1`/" ${GRAPHITE_WEBAPP}/graphite/local_settings.py \
+    && cp /root/config/apache/*.conf /etc/apache2/sites-available/ \
+    && cp /root/config/supervisor/*.conf /etc/supervisor/conf.d/graphite.conf \
+    && cd ${GRAPHITE_WEBAPP}/graphite && python manage.py syncdb --noinput \
+    && a2dissite 000-default \
+    && a2ensite graphite \
+    && a2enmod socache_shmcb rewrite \
+    && chown www-data:www-data ${GRAPHITE_STORAGE}/graphite.db \
+    && groupadd -g 998 carbon \
+    && useradd -c "carbon user" -g 998 -u 998 -s /bin/false carbon \
+    && chmod 775 ${GRAPHITE_STORAGE} \
+    && chown www-data:carbon ${GRAPHITE_STORAGE} \
+    && chown -R carbon ${GRAPHITE_STORAGE}/whisper \
+    && mkdir ${GRAPHITE_STORAGE}/log/apache2 \
+    && chown www-data ${GRAPHITE_STORAGE}/log/webapp \
+    && cp /root/config/graphite/cron/build-index /etc/cron.hourly/graphite-build-index \
+    && chmod 755 /etc/cron.hourly/graphite-build-index
+#    && su - www-data -c "/opt/graphite/bin/build-index.sh"
 
-ADD config/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-ADD config/storage-schemas.conf /opt/graphite/conf/storage-schemas.conf
-ADD config/local_settings.py /opt/graphite/webapp/graphite/local_settings.py
-ADD config/vhost_graphite.conf /etc/apache2/sites-available/graphite.conf
-ADD config/vhost_grafana.conf /etc/apache2/sites-available/grafana.conf
-ADD config/vhost_elasticsearch.conf /etc/apache2/sites-available/elastic.conf
-ADD config/grafana_config.js /var/www/grafana/config.js
-ADD config/initial_data.json /opt/graphite/webapp/graphite/initial_data.json
-
-RUN a2dissite 000-default && a2ensite grafana graphite elastic && a2enmod headers proxy_http proxy
-RUN cd /opt/graphite/webapp/graphite && python manage.py syncdb --noinput
-RUN mv /opt/graphite/conf/carbon.conf.example /opt/graphite/conf/carbon.conf
-RUN mv /opt/graphite/conf/aggregation-rules.conf.example /opt/graphite/conf/aggregation-rules.conf
-RUN mv /opt/graphite/conf/storage-aggregation.conf.example /opt/graphite/conf/storage-aggregation.conf
-RUN mv /opt/graphite/conf/dashboard.conf.example /opt/graphite/conf/dashboard.conf
-RUN mv /opt/graphite/conf/graphTemplates.conf.example /opt/graphite/conf/graphTemplates.conf
-RUN mv /opt/graphite/conf/graphite.wsgi.example /opt/graphite/conf/graphite.wsgi
-RUN chown -R www-data:www-data /opt/graphite/storage/
-
-EXPOSE 80 8080 2003 2004 7002
+EXPOSE 80 2003 2004 7002 8125
 
 CMD ["/usr/bin/supervisord"]
