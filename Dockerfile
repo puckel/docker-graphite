@@ -55,17 +55,11 @@ RUN cd /usr/local/src \
     && a2dissite 000-default \
     && a2ensite graphite \
     && a2enmod socache_shmcb rewrite \
-    && chown www-data:www-data ${GRAPHITE_STORAGE}/graphite.db \
-    && groupadd -g 998 carbon \
-    && useradd -c "carbon user" -g 998 -u 998 -s /bin/false carbon \
-    && chmod 775 ${GRAPHITE_STORAGE} \
-    && chown www-data:carbon ${GRAPHITE_STORAGE} \
-    && chown -R carbon ${GRAPHITE_STORAGE}/whisper \
     && mkdir ${GRAPHITE_STORAGE}/log/apache2 \
-    && chown www-data ${GRAPHITE_STORAGE}/log/webapp \
+    && chown -R www-data:www-data ${GRAPHITE_STORAGE} \
+    && chmod 775 ${GRAPHITE_STORAGE} \
     && cp /root/config/graphite/cron/build-index /etc/cron.hourly/graphite-build-index \
     && chmod 755 /etc/cron.hourly/graphite-build-index
-#    && su - www-data -c "/opt/graphite/bin/build-index.sh"
 
 EXPOSE 80 2003 2004 7002 8125
 
