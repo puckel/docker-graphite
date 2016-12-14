@@ -25,8 +25,11 @@ RUN apt-get update -yqq \
     && apt-get install -yqq \
     libcairo2-dev libffi-dev pkg-config python-dev python-pip fontconfig apache2 libapache2-mod-wsgi git-core collectd memcached \
     gcc g++ make supervisor \
+    build-essential libtool autoconf automake scons python-setuptools lsof git texlive check \
     && apt-get clean \
     && rm -rf \
+    easy_install pip \
+    pip install pytest \
     /var/lib/apt/lists/* \
     /tmp/* \
     /var/tmp/* \
@@ -38,11 +41,11 @@ RUN cd /usr/local/src \
     && git clone https://github.com/graphite-project/graphite-web.git \
     && git clone https://github.com/graphite-project/carbon.git \
     && git clone https://github.com/graphite-project/whisper.git \
-    && git clone https://github.com/armon/statsite.git \
+    && git clone https://github.com/statsite/statsite.git \
     && cd whisper; git checkout ${GRAPHITE_RELEASE}; python setup.py install \
     && cd ../carbon; git checkout ${GRAPHITE_RELEASE}; pip install -r requirements.txt; python setup.py install \
     && cd ../graphite-web; git checkout ${GRAPHITE_RELEASE}; pip install -r requirements.txt; python check-dependencies.py; python setup.py install \
-    && cd ../statsite; pip install --egg SCons; make; cp statsite /usr/local/sbin/; cp sinks/graphite.py /usr/local/sbin/statsite-sink-graphite.py \
+    && cd ../statsite; /bin/sh autogen.sh; /bin/sh configure; make; make install; cp statsite /usr/local/sbin/; cp sinks/graphite.py /usr/local/sbin/statsite-sink-graphite.py \
     && mkdir ${GRAPHITE_CONF}/examples \
     && mv ${GRAPHITE_CONF}/*.example ${GRAPHITE_CONF}/examples/ \
     && cp /root/config/statsite/statsite.conf /etc/statsite.conf \
